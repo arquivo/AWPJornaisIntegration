@@ -1,13 +1,13 @@
-__author__ = "Daniel Bicho"
-__email__ = "daniel.bicho@fccn.pt"
-
-
-import datetime
 import logging
 import re
 
 import cx_Oracle
 import warc
+
+from write2arc import Write2Arc
+
+__author__ = "Daniel Bicho"
+__email__ = "daniel.bicho@fccn.pt"
 
 
 def compute_content_length(payload):
@@ -23,8 +23,6 @@ def compute_content_length(payload):
     return content_length - len('\r\n\r\n'.encode('utf-8'))
 
 
-# TODO GZIP each arc record
-# TODO limit ARC File size
 def main():
     # set logging level
     logging.basicConfig(levelname=logging.INFO)
@@ -35,14 +33,11 @@ def main():
     connection = cx_Oracle.connect('linxs/linxs@p24.arquivo.pt:1522/linxsdb')
     cursor = connection.cursor()
 
-    # Init Arc File to Write
-    arc = warc.ARCFile(filename='./teste.arc', mode='w', version=1,
-                       file_headers={'ip_address': '193.136.192.200',
-                                     'date': datetime.datetime.utcnow().strftime('%Y%m%d%H%M%S'),
-                                     'org': 'Arquivo.pt'})
+    # Init object responsable to write to arc file
+    arc = Write2Arc('AWP-JornaisPT', 10000000)
 
     # Execute Query to extract needed information from LinxsDB
-    cursor.execute("SELECT URL,DATA_INDEX,ORIGINAL,ID FROM ARTIGO WHERE ID >= 338794")
+    cursor.execute("SELECT URL,DATA_INDEX,ORIGINAL,ID FROM ARTIGO")
     for row in cursor:
         record = {'URL': row[0], 'TIME': row[1].strftime('%Y%m%d%H%M%S'), 'PAYLOAD': row[2].read()}
 
@@ -53,33 +48,26 @@ def main():
         logger.info("RECORD WRITE {} {}".format(row[3], record['URL']))
         logger.debug("PAYLOAD {}".format(record['PAYLOAD']))
 
-        # Set Content-length
-        # search_length = re.search(r"Content-length: (\d+)", record['PAYLOAD'])
-        #if search_length:
-        #    content_length = search_length.group(1)
-        #else:
-        #    content_length = compute_content_length(record['PAYLOAD'])
-
-        #logger.debug("CONTENT-LENGTH HEADER {}".format(content_length))
-        #logger.debug("CONTENT-LENGTH COMPUTED {}".format(compute_content_length(record['PAYLOAD'])))
-
         # Set content - type
         search_type = re.search(r"[cC]ontent-[tT]ype: (\w+/\w+)", record['PAYLOAD'])
         if search_type:
             content_type = search_type.group(1)
+        else:
+            # if not content-type detected, the record is invalid
+            continue
 
         # Put together in a string the ARC header record and ARC record payload
-        record_header = '{} {} {} {} {}'.format(record['URL'], '193.136.44.167', record['TIME'], content_type,
+        record_header = '{} {} {} {} {}'.format(record['URL'], '1.1.1.1', record['TIME'], content_type,
                                                 len(record['PAYLOAD']))
 
         # Fix bad formed headers record (multiple white spaces, beginning white spaces)
-        record_header = re.sub('\s+',' ', record_header).strip()
+        record_header = re.sub('\s+', ' ', record_header).strip()
 
         logger.info('RECORD HEADER - {}'.format(record_header))
 
         # Generate a ARCRecord object and write to ARC File
         arc_record = warc.ARCRecord.from_string(record_header + '\n' + record['PAYLOAD'], 1)
-        arc.write(arc_record)
+        arc.write_record(arc_record)
 
     # Clean up DB connection
     cursor.close()
