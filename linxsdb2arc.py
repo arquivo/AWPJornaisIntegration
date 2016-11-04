@@ -34,10 +34,10 @@ def main():
     cursor = connection.cursor()
 
     # Init object responsable to write to arc file
-    arc = Write2Arc('AWP-JornaisPT', 10000000)
+    arc = Write2Arc('AWP-JornaisPT', 100000000)
 
     # Execute Query to extract needed information from LinxsDB
-    cursor.execute("SELECT URL,DATA_INDEX,ORIGINAL,ID FROM ARTIGO")
+    cursor.execute("SELECT URL,DATA_INDEX,ORIGINAL,ID FROM ARTIGO ORDER BY DATA_INDEX")
     for row in cursor:
         record = {'URL': row[0], 'TIME': row[1].strftime('%Y%m%d%H%M%S'), 'PAYLOAD': row[2].read()}
 
