@@ -4,6 +4,7 @@ from warc.gzip2 import GzipFile
 __author__ = "Daniel Bicho"
 __email__ = "daniel.bicho@fccn.pt"
 
+
 # Extend ARCFile functionality to write gzipped arc files
 class ARCFile2(ARCFile):
     def __init__(self, filename=None, mode=None, fileobj=None, version=None, file_headers={}):

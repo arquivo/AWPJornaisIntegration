@@ -1,7 +1,8 @@
 import logging
-import re
 import os
+import re
 
+import chardet
 import cx_Oracle
 import warc
 
@@ -11,6 +12,7 @@ __author__ = "Daniel Bicho"
 __email__ = "daniel.bicho@fccn.pt"
 
 os.environ["NLS_LANG"] = ".UTF8"
+
 
 def compute_content_length(payload):
     content_length = 0
@@ -27,19 +29,19 @@ def compute_content_length(payload):
 
 def main():
     # set logging level
-    logging.basicConfig(filename='linxdb2arc.log', levelname=logging.INFO)
+    logging.basicConfig(filename='jornaisdb2arc.log', levelname=logging.INFO)
     logger = logging.getLogger(__name__)
     logger.setLevel('DEBUG')
 
     # Connection to Oracle Database where LinxsDB is located
-    connection = cx_Oracle.connect('linxs/linxs@p24.arquivo.pt:1522/linxsdb')
+    connection = cx_Oracle.connect('<connection string>')
     cursor = connection.cursor()
 
     # Init object responsable to write to arc file
     arc = Write2Arc('AWP-JornaisPT', 100000000)
 
     # Execute Query to extract needed information from LinxsDB
-    cursor.execute("SELECT URL,DATA_INDEX,ORIGINAL,ID FROM ARTIGO ORDER BY DATA_INDEX")
+    cursor.execute("SELECT URL,DATA_INDEX,ORIGINAL,ID FROM ARTIGO ORDER BY DATA_INDEX DESC")
     for row in cursor:
         record = {'URL': row[0], 'TIME': row[1].strftime('%Y%m%d%H%M%S'), 'PAYLOAD': row[2].read()}
 
@@ -57,12 +59,24 @@ def main():
             search_type = re.search(r"[cC]ontent-[tT]ype: (\w+/\w+)", record['PAYLOAD'])
             if search_type:
                 content_type = search_type.group(1)
+
+                # Detect Encoding
+                detected_enconding = chardet.detect(record['PAYLOAD'])
+
+                if detected_enconding['confidence'] >= 0.9:
+                    replace_string = 'Content-type: {}; charset={}\n'.format(content_type,
+                                                                             detected_enconding['encoding'])
+                    record['PAYLOAD'] = re.sub(r"[cC]ontent-[tT]ype: \w+/\w+;?.*\n", replace_string, record['PAYLOAD'])
+
+                logger.debug(
+                    'Encoding {} with {} confidence'.format(detected_enconding['encoding'],
+                                                            detected_enconding['confidence']))
             else:
                 content_type = 'text/html'
 
             # Put together in a string the ARC header record and ARC record payload
             record_header = '{} {} {} {} {}'.format(record['URL'], '1.1.1.1', record['TIME'], content_type,
-                                                len(record['PAYLOAD']))
+                                                    len(record['PAYLOAD']))
 
             # Fix bad formed headers record (multiple white spaces, beginning white spaces)
             record_header = re.sub('\s+', ' ', record_header).strip()
